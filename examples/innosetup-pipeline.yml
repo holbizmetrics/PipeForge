@@ -1,0 +1,72 @@
+# PipeForge Pipeline Definition
+# This pipeline watches your .iss file and recompiles the installer on every change.
+# Run with: pipeforge run pipeforge.yml --interactive --watch
+
+name: MyApp Installer Pipeline
+description: Watch, compile, sign, and verify Inno Setup installer
+
+working_directory: .
+
+variables:
+  PROJECT_NAME: MyApp
+  ISS_FILE: ./installer/myapp.iss
+  OUTPUT_DIR: ./installer/Output
+  ISCC_PATH: C:\Program Files (x86)\Inno Setup 6\ISCC.exe
+  VERSION: 1.0.0
+
+# File watchers — trigger the pipeline when these change
+watch:
+  - path: ./installer
+    filter: "*.iss"
+    debounce_ms: 1000
+  - path: ./src
+    filter: "*.cs"
+    include_subdirectories: true
+    debounce_ms: 2000
+    only_stage: build  # Only triggers the build stage, not the full pipeline
+
+stages:
+  # ── Stage 1: Build the application ──
+  - name: build
+    steps:
+      - name: Restore packages
+        command: dotnet
+        arguments: restore ./src/MyApp.sln
+
+      - name: Build application
+        command: dotnet
+        arguments: build ./src/MyApp.sln -c Release --no-restore
+        timeout_seconds: 300
+        breakpoint: on_failure  # Pause here if build fails — inspect the error
+
+  # ── Stage 2: Compile the installer ──
+  - name: installer
+    steps:
+      - name: Compile Inno Setup
+        command: ${ISCC_PATH}
+        arguments: /O"${OUTPUT_DIR}" /DMyAppVersion=${VERSION} "${ISS_FILE}"
+        timeout_seconds: 120
+        artifacts:
+          - ${OUTPUT_DIR}/*.exe
+        breakpoint: on_failure
+
+  # ── Stage 3: Sign the installer (optional) ──
+  - name: sign
+    condition:
+      only_if: SIGNTOOL_PATH
+    steps:
+      - name: Code sign
+        command: ${SIGNTOOL_PATH}
+        arguments: sign /tr http://timestamp.digicert.com /td sha256 /fd sha256 /a "${OUTPUT_DIR}/${PROJECT_NAME}-${VERSION}-setup.exe"
+
+  # ── Stage 4: Verify ──
+  - name: verify
+    steps:
+      - name: Check installer exists
+        command: cmd.exe
+        arguments: /c if not exist "${OUTPUT_DIR}\*.exe" (echo ERROR: No installer found & exit 1)
+      
+      - name: Show installer info
+        command: cmd.exe
+        arguments: /c dir "${OUTPUT_DIR}\*.exe"
+        breakpoint: always  # Always pause here — inspect the final output
