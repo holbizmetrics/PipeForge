@@ -1,4 +1,6 @@
+using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Media;
 using Avalonia.Threading;
 using AvaloniaEdit;
 using AvaloniaEdit.TextMate;
@@ -24,6 +26,32 @@ public partial class PipelineEditorView : UserControl
             var registryOptions = new RegistryOptions(ThemeName.DarkPlus);
             var installation = _editor.InstallTextMate(registryOptions);
             installation.SetGrammar(registryOptions.GetScopeByLanguageId("yaml"));
+
+            // Read theme colors and apply to editor
+            string? colorStr;
+
+            if (installation.TryGetThemeColor("editor.background", out colorStr) && colorStr != null
+                && Color.TryParse(colorStr, out Color bg))
+                _editor.Background = new SolidColorBrush(bg);
+
+            if (installation.TryGetThemeColor("editor.foreground", out colorStr) && colorStr != null
+                && Color.TryParse(colorStr, out Color fg))
+                _editor.Foreground = new SolidColorBrush(fg);
+
+            if (installation.TryGetThemeColor("editorLineNumber.foreground", out colorStr) && colorStr != null
+                && Color.TryParse(colorStr, out Color ln))
+                _editor.LineNumbersForeground = new SolidColorBrush(ln);
+
+            if (installation.TryGetThemeColor("editor.selectionBackground", out colorStr) && colorStr != null
+                && Color.TryParse(colorStr, out Color sel))
+                _editor.TextArea.SelectionBrush = new SolidColorBrush(sel);
+
+            if (installation.TryGetThemeColor("editor.lineHighlightBackground", out colorStr) && colorStr != null
+                && Color.TryParse(colorStr, out Color hl))
+            {
+                _editor.TextArea.TextView.CurrentLineBackground = new SolidColorBrush(hl);
+                _editor.TextArea.TextView.CurrentLineBorder = new Pen(new SolidColorBrush(hl));
+            }
         }
     }
 
