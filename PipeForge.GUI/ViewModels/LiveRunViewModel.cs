@@ -13,12 +13,13 @@ public partial class LiveRunViewModel : ObservableObject
     private CancellationTokenSource? _cts;
     private TaskCompletionSource<DebugAction>? _breakpointTcs;
     private ILoggerFactory? _loggerFactory;
+    private bool _stepNextRequested;
 
     [ObservableProperty]
     private ObservableCollection<OutputLineItem> _outputLines = new();
 
     [ObservableProperty]
-    private ObservableCollection<StepResultItem> _stepResults = new();
+    private ObservableCollection<StepProgressItem> _stepProgress = new();
 
     [ObservableProperty]
     private bool _isRunning;
@@ -34,6 +35,9 @@ public partial class LiveRunViewModel : ObservableObject
 
     [ObservableProperty]
     private string _elapsedText = "";
+
+    [ObservableProperty]
+    private string _stepProgressText = "";
 
     [ObservableProperty]
     private string? _breakpointStepName;
@@ -78,14 +82,28 @@ public partial class LiveRunViewModel : ObservableObject
         await RunFromPathAsync(path);
     }
 
+    [RelayCommand]
+    private async Task RestartAsync()
+    {
+        if (LoadedFilePath != null)
+            await RunFromPathAsync(LoadedFilePath);
+    }
+
+    [RelayCommand]
+    private void ToggleBreakpoint(StepProgressItem item)
+    {
+        item.HasBreakpoint = !item.HasBreakpoint;
+    }
+
     private async Task RunFromPathAsync(string path)
     {
         // Reset state
         OutputLines.Clear();
-        StepResults.Clear();
+        StepProgress.Clear();
         IsPaused = false;
         IsRunning = true;
         StatusText = "Loading...";
+        StepProgressText = "";
 
         PipelineDefinition pipeline;
         try
@@ -99,6 +117,27 @@ public partial class LiveRunViewModel : ObservableObject
             IsRunning = false;
             return;
         }
+
+        // Populate step progress from pipeline definition
+        int stepNumber = 0;
+        foreach (var stage in pipeline.Stages)
+        {
+            foreach (var step in stage.Steps)
+            {
+                stepNumber++;
+                StepProgress.Add(new StepProgressItem
+                {
+                    StageName = stage.Name,
+                    StepName = step.Name,
+                    Command = $"{step.Command} {step.Arguments ?? ""}".Trim(),
+                    StepNumber = stepNumber,
+                    HasBreakpoint = step.Breakpoint == BreakpointMode.Always
+                });
+            }
+        }
+
+        int totalSteps = stepNumber;
+        StepProgressText = $"0/{totalSteps}";
 
         // Trust check
         try
@@ -131,22 +170,54 @@ public partial class LiveRunViewModel : ObservableObject
             });
         };
 
-        // Wire breakpoints
+        // Wire breakpoints — smart: only pause at GUI-breakpointed or YAML-breakpointed steps
         _engine.OnBeforeStep += (_, e) =>
         {
             var tcs = new TaskCompletionSource<DebugAction>();
             _breakpointTcs = tcs;
 
+            // Find matching step progress item
+            var progressItem = e.StepIndex > 0 && e.StepIndex <= StepProgress.Count
+                ? StepProgress[e.StepIndex - 1]
+                : null;
+
+            bool shouldPause = progressItem?.HasBreakpoint == true
+                || e.Step.Breakpoint == BreakpointMode.Always
+                || _stepNextRequested;
+
+            _stepNextRequested = false;
+
             Avalonia.Threading.Dispatcher.UIThread.Post(() =>
             {
-                IsPaused = true;
-                BreakpointStepName = e.Step.Name;
-                BreakpointStageName = e.StageName;
-                BreakpointInfo = $"Step {e.StepIndex}/{e.TotalSteps}: {e.Step.Command} {e.Step.Arguments ?? ""}";
-                StatusText = $"Paused at {e.StageName}/{e.Step.Name}";
+                // Update step progress: mark as running
+                if (progressItem != null)
+                {
+                    // Clear previous current indicator
+                    foreach (var item in StepProgress)
+                        item.IsCurrent = false;
+
+                    progressItem.IsCurrent = true;
+                    progressItem.Status = StepProgressStatus.Running;
+                }
+
+                StepProgressText = $"{e.StepIndex}/{e.TotalSteps}";
+
+                if (shouldPause)
+                {
+                    IsPaused = true;
+                    BreakpointStepName = e.Step.Name;
+                    BreakpointStageName = e.StageName;
+                    BreakpointInfo = $"Step {e.StepIndex}/{e.TotalSteps}: {e.Step.Command} {e.Step.Arguments ?? ""}";
+                    StatusText = $"Paused at {e.StageName}/{e.Step.Name}";
+                }
+                else
+                {
+                    // Auto-continue: no breakpoint set for this step
+                    tcs.TrySetResult(DebugAction.Continue);
+                }
             });
 
-            // Block engine thread until user decides
+            // Block engine thread until user decides (or auto-continue resolves)
             e.Action = tcs.Task.Result;
 
             Avalonia.Threading.Dispatcher.UIThread.Post(() =>
@@ -155,7 +226,7 @@ public partial class LiveRunViewModel : ObservableObject
             });
         };
 
-        // Wire after-step for results table
+        // Wire after-step to update step progress
         _engine.OnAfterStep += (_, e) =>
         {
             var last = e.Run.StepResults.LastOrDefault();
@@ -163,13 +234,27 @@ public partial class LiveRunViewModel : ObservableObject
             {
                 Avalonia.Threading.Dispatcher.UIThread.Post(() =>
                 {
-                    StepResults.Add(new StepResultItem(
-                        last.StageName,
-                        last.StepName,
-                        last.Status.ToString(),
-                        $"{last.Elapsed.TotalSeconds:F1}s",
-                        last.ExitCode,
-                        last.Status == StepStatus.Failed));
+                    // Find matching progress item
+                    var progressItem = StepProgress.FirstOrDefault(p =>
+                        p.StepName == last.StepName && p.StageName == last.StageName);
+
+                    if (progressItem != null)
+                    {
+                        progressItem.Status = last.Status switch
+                        {
+                            StepStatus.Success => StepProgressStatus.Success,
+                            StepStatus.Failed => StepProgressStatus.Failed,
+                            StepStatus.Skipped => StepProgressStatus.Skipped,
+                            _ => StepProgressStatus.Pending
+                        };
+                        progressItem.Duration = $"{last.Elapsed.TotalSeconds:F1}s";
+                        progressItem.ExitCode = last.ExitCode;
+                        progressItem.IsCurrent = false;
+                    }
+
+                    int completed = StepProgress.Count(s =>
+                        s.Status is StepProgressStatus.Success or StepProgressStatus.Failed or StepProgressStatus.Skipped);
+                    StepProgressText = $"{completed}/{StepProgress.Count}";
                 });
             }
         };
@@ -184,6 +269,10 @@ public partial class LiveRunViewModel : ObservableObject
             {
                 StatusText = $"{run.Status} — {run.SuccessCount}/{run.StepResults.Count} steps, {run.Elapsed.TotalSeconds:F1}s";
                 ElapsedText = $"{run.Elapsed.TotalSeconds:F1}s";
+
+                // Clear current indicator
+                foreach (var item in StepProgress)
+                    item.IsCurrent = false;
             });
         }
         catch (OperationCanceledException)
@@ -205,6 +294,14 @@ public partial class LiveRunViewModel : ObservableObject
 
     [RelayCommand]
     private void ContinueStep() => ResolveBreakpoint(DebugAction.Continue);
+
+    [RelayCommand]
+    private void StepNext()
+    {
+        // Continue this step, but force pause at the next one (like F10)
+        _stepNextRequested = true;
+        ResolveBreakpoint(DebugAction.Continue);
+    }
 
     [RelayCommand]
     private void SkipStep() => ResolveBreakpoint(DebugAction.Skip);
@@ -234,4 +331,28 @@ public partial class LiveRunViewModel : ObservableObject
 }
 
 public record OutputLineItem(DateTime Timestamp, string Text, bool IsError);
-public record StepResultItem(string Stage, string Step, string Status, string Duration, int ExitCode, bool IsFailed);
+
+public partial class StepProgressItem : ObservableObject
+{
+    public required string StageName { get; init; }
+    public required string StepName { get; init; }
+    public required string Command { get; init; }
+    public required int StepNumber { get; init; }
+
+    [ObservableProperty]
+    private StepProgressStatus _status = StepProgressStatus.Pending;
+
+    [ObservableProperty]
+    private bool _hasBreakpoint;
+
+    [ObservableProperty]
+    private bool _isCurrent;
+
+    [ObservableProperty]
+    private string? _duration;
+
+    [ObservableProperty]
+    private int? _exitCode;
+}
+
+public enum StepProgressStatus { Pending, Running, Success, Failed, Skipped }

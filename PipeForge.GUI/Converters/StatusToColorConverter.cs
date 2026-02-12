@@ -2,6 +2,7 @@ using System.Globalization;
 using Avalonia.Data.Converters;
 using Avalonia.Media;
 using PipeForge.Core.Models;
+using PipeForge.GUI.ViewModels;
 
 namespace PipeForge.GUI.Converters;
 
@@ -34,6 +35,32 @@ public class StatusToColorConverter : IValueConverter
             PipelineRunStatus.Pending => Gray,
 
             _ => Gray
+        };
+    }
+
+    public object? ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)
+        => throw new NotSupportedException();
+}
+
+public class StepProgressStatusToBrushConverter : IValueConverter
+{
+    // Catppuccin Mocha palette
+    private static readonly IBrush TextDefault = new SolidColorBrush(Color.Parse("#CDD6F4"));
+    private static readonly IBrush Green = new SolidColorBrush(Color.Parse("#A6E3A1"));
+    private static readonly IBrush Red = new SolidColorBrush(Color.Parse("#F38BA8"));
+    private static readonly IBrush Yellow = new SolidColorBrush(Color.Parse("#F9E2AF"));
+    private static readonly IBrush Gray = new SolidColorBrush(Color.Parse("#585B70"));
+
+    public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
+    {
+        return value switch
+        {
+            StepProgressStatus.Success => Green,
+            StepProgressStatus.Failed => Red,
+            StepProgressStatus.Running => Yellow,
+            StepProgressStatus.Skipped => Gray,
+            StepProgressStatus.Pending => TextDefault,
+            _ => TextDefault
         };
     }
 

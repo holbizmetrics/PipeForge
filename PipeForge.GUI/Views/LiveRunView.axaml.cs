@@ -1,5 +1,6 @@
 using System.Collections.Specialized;
 using Avalonia.Controls;
+using Avalonia.Input;
 using PipeForge.GUI.ViewModels;
 
 namespace PipeForge.GUI.Views;
@@ -29,6 +30,17 @@ public partial class LiveRunView : UserControl
                     }
                 }
             };
+        }
+    }
+
+    private void StepListBox_DoubleTapped(object? sender, TappedEventArgs e)
+    {
+        if (DataContext is LiveRunViewModel vm && sender is ListBox listBox)
+        {
+            if (listBox.SelectedItem is StepProgressItem item)
+            {
+                vm.ToggleBreakpointCommand.Execute(item);
+            }
         }
     }
 }
