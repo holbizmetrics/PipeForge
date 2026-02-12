@@ -1,0 +1,6 @@
+<Solution>
+  <Project Path="PipeForge.Core/PipeForge.Core.csproj" />
+  <Project Path="PipeForge.Runner/PipeForge.Runner.csproj" />
+  <Project Path="PipeForge.Tests/PipeForge.Tests.csproj" />
+  <Project Path="PipeForge.GUI/PipeForge.GUI.csproj" />
+</Solution>

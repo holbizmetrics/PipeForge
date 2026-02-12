@@ -5,8 +5,14 @@ namespace PipeForge.Core.Models;
 /// </summary>
 public class PipelineDefinition
 {
+    /// <summary>
+    /// Current schema version. Bump when the YAML shape changes in breaking ways.
+    /// </summary>
+    public const int CurrentSchemaVersion = 1;
+
     public string Name { get; set; } = "Unnamed Pipeline";
     public string? Description { get; set; }
+    public int Version { get; set; } = 0; // 0 = not specified
     public string? WorkingDirectory { get; set; }
     public Dictionary<string, string> Variables { get; set; } = new();
     public List<WatchTrigger> Watch { get; set; } = new();

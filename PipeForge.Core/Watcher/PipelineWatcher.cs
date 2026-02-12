@@ -1,20 +1,33 @@
 using Microsoft.Extensions.Logging;
+using PipeForge.Core.Engine;
 using PipeForge.Core.Models;
 
 namespace PipeForge.Core.Watcher;
 
 /// <summary>
 /// Watches file system for changes and triggers pipeline execution.
-/// Supports debouncing (so a save-all doesn't fire 50 times),
-/// filter patterns, and targeted stage execution.
+/// Hardened against: buffer overflow, duplicate events, rapid changes.
 /// </summary>
 public class PipelineWatcher : IDisposable
 {
     private readonly ILogger<PipelineWatcher> _logger;
     private readonly List<FileSystemWatcher> _watchers = new();
     private readonly Dictionary<string, Timer> _debounceTimers = new();
+    private readonly Dictionary<string, DateTime> _recentTriggers = new();
     private readonly object _lock = new();
     private bool _disposed;
+
+    /// <summary>
+    /// Internal buffer size for FileSystemWatcher. Default 8KB is too small
+    /// for rapid changes (git checkout, npm install). 64KB handles ~4000 events.
+    /// </summary>
+    public int BufferSize { get; set; } = 65536;
+
+    /// <summary>
+    /// Minimum interval between triggers for the same watch key.
+    /// Prevents re-triggering while a pipeline is still running.
+    /// </summary>
+    public TimeSpan MinTriggerInterval { get; set; } = TimeSpan.FromSeconds(2);
 
     /// <summary>
     /// Fires when a file change is detected (after debounce).
@@ -34,30 +47,52 @@ public class PipelineWatcher : IDisposable
     {
         foreach (var trigger in triggers)
         {
-            if (!Directory.Exists(trigger.Path))
+            var normalizedPath = PathNormalizer.NormalizeSeparators(trigger.Path);
+
+            if (!Directory.Exists(normalizedPath))
             {
-                _logger.LogWarning("Watch path does not exist, skipping: {Path}", trigger.Path);
+                _logger.LogWarning("Watch path does not exist, skipping: {Path}", normalizedPath);
                 continue;
             }
 
-            var watcher = new FileSystemWatcher(trigger.Path, trigger.Filter)
+            var watcher = new FileSystemWatcher(normalizedPath, trigger.Filter)
             {
                 IncludeSubdirectories = trigger.IncludeSubdirectories,
-                NotifyFilter = NotifyFilters.LastWrite 
-                             | NotifyFilters.FileName 
+                InternalBufferSize = BufferSize,
+                NotifyFilter = NotifyFilters.LastWrite
+                             | NotifyFilters.FileName
                              | NotifyFilters.CreationTime,
                 EnableRaisingEvents = true
             };
 
-            var localTrigger = trigger; // Capture for closure
+            var localTrigger = trigger;
 
             watcher.Changed += (_, e) => HandleChange(e.FullPath, localTrigger);
             watcher.Created += (_, e) => HandleChange(e.FullPath, localTrigger);
             watcher.Renamed += (_, e) => HandleChange(e.FullPath, localTrigger);
 
+            // Handle buffer overflow — log and continue (events are lost, not fatal)
+            watcher.Error += (_, e) =>
+            {
+                var ex = e.GetException();
+                _logger.LogWarning("FileSystemWatcher error (events may have been lost): {Message}", ex.Message);
+
+                // Attempt recovery: restart the watcher
+                try
+                {
+                    watcher.EnableRaisingEvents = false;
+                    watcher.EnableRaisingEvents = true;
+                    _logger.LogInformation("FileSystemWatcher recovered for {Path}/{Filter}", normalizedPath, trigger.Filter);
+                }
+                catch (Exception restartEx)
+                {
+                    _logger.LogError(restartEx, "Failed to restart FileSystemWatcher for {Path}", normalizedPath);
+                }
+            };
+
             _watchers.Add(watcher);
-            _logger.LogInformation("Watching: {Path}/{Filter} (debounce: {Ms}ms)", 
-                trigger.Path, trigger.Filter, trigger.DebounceMs);
+            _logger.LogInformation("Watching: {Path}/{Filter} (debounce: {Ms}ms, buffer: {KB}KB)",
+                normalizedPath, trigger.Filter, trigger.DebounceMs, BufferSize / 1024);
         }
     }
 
@@ -65,9 +100,18 @@ public class PipelineWatcher : IDisposable
     {
         lock (_lock)
         {
-            // Debounce: reset timer on each change
             var key = $"{trigger.Path}:{trigger.Filter}";
-            
+
+            // Suppress duplicate triggers within MinTriggerInterval
+            if (_recentTriggers.TryGetValue(key, out var lastTrigger) &&
+                DateTime.UtcNow - lastTrigger < MinTriggerInterval)
+            {
+                _logger.LogDebug("Suppressed duplicate trigger for {Key} (within {Ms}ms window)",
+                    key, MinTriggerInterval.TotalMilliseconds);
+                return;
+            }
+
+            // Debounce: reset timer on each change
             if (_debounceTimers.TryGetValue(key, out var existing))
             {
                 existing.Dispose();
@@ -76,8 +120,13 @@ public class PipelineWatcher : IDisposable
             _debounceTimers[key] = new Timer(
                 async _ =>
                 {
+                    lock (_lock)
+                    {
+                        _recentTriggers[key] = DateTime.UtcNow;
+                    }
+
                     _logger.LogInformation("File changed: {File} → triggering pipeline", filePath);
-                    
+
                     try
                     {
                         if (OnTriggered != null)
@@ -110,13 +159,13 @@ public class PipelineWatcher : IDisposable
 
         foreach (var watcher in _watchers)
             watcher.Dispose();
-        
+
         lock (_lock)
         {
             foreach (var timer in _debounceTimers.Values)
                 timer.Dispose();
         }
-        
+
         GC.SuppressFinalize(this);
     }
 }

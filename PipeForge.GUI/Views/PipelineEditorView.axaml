@@ -1,0 +1,71 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:ae="using:AvaloniaEdit"
+             xmlns:vm="using:PipeForge.GUI.ViewModels"
+             x:Class="PipeForge.GUI.Views.PipelineEditorView"
+             x:DataType="vm:PipelineEditorViewModel">
+
+    <DockPanel>
+        <!-- Toolbar -->
+        <Border DockPanel.Dock="Top" Padding="8" Background="#181825">
+            <StackPanel Orientation="Horizontal" Spacing="8">
+                <Button Content="Open" Command="{Binding OpenFileCommand}" />
+                <Button Content="Save" Command="{Binding SaveFileCommand}" />
+                <Button Content="Validate" Command="{Binding ValidateCommand}" />
+                <Separator />
+                <TextBlock Text="{Binding StatusText}"
+                           VerticalAlignment="Center"
+                           Foreground="#A6ADC8"
+                           Margin="8,0" />
+            </StackPanel>
+        </Border>
+
+        <!-- Main content: Editor + Validation Panel -->
+        <Grid ColumnDefinitions="2*,*">
+            <!-- YAML Editor -->
+            <ae:TextEditor Name="YamlEditor"
+                           Grid.Column="0"
+                           FontFamily="Cascadia Code,Consolas,Courier New"
+                           FontSize="13"
+                           ShowLineNumbers="True"
+                           Background="#1E1E2E"
+                           Foreground="#CDD6F4"
+                           Margin="0,0,4,0" />
+
+            <!-- Validation Panel -->
+            <Border Grid.Column="1" Background="#1E1E2E" Padding="8" CornerRadius="4">
+                <DockPanel>
+                    <TextBlock DockPanel.Dock="Top"
+                               Text="Validation"
+                               FontWeight="Bold"
+                               FontSize="14"
+                               Foreground="#CDD6F4"
+                               Margin="0,0,0,8" />
+
+                    <TextBlock DockPanel.Dock="Top"
+                               Text="{Binding ValidationOutput}"
+                               Foreground="#A6E3A1"
+                               IsVisible="{Binding !HasErrors}"
+                               Margin="0,0,0,8" />
+
+                    <ListBox ItemsSource="{Binding ValidationMessages}"
+                             Background="Transparent"
+                             BorderThickness="0">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate>
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <TextBlock Text="{Binding Severity}"
+                                               FontWeight="Bold"
+                                               Foreground="{Binding IsError, Converter={StaticResource BoolToColor}, ConverterParameter=#F38BA8|#FAB387}" />
+                                    <TextBlock Text="{Binding Location}" Foreground="#89B4FA" />
+                                    <TextBlock Text="{Binding Message}" Foreground="#CDD6F4" TextWrapping="Wrap" />
+                                </StackPanel>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                </DockPanel>
+            </Border>
+        </Grid>
+    </DockPanel>
+
+</UserControl>

@@ -21,12 +21,20 @@ class Program
         interactiveOption.AddAlias("-i");
         var watchOption = new Option<bool>("--watch", () => false, "Keep running and watch for file changes");
         watchOption.AddAlias("-w");
+        var verboseOption = new Option<bool>("--verbose", () => false, "Show debug-level output from the engine");
+        verboseOption.AddAlias("-v");
+        var quietOption = new Option<bool>("--quiet", () => false, "Only show errors and final summary");
+        quietOption.AddAlias("-q");
+        var notifyOption = new Option<bool>("--notify", () => false, "Send OS notification on watch-mode completion");
 
         runCommand.AddArgument(fileArg);
         runCommand.AddOption(interactiveOption);
         runCommand.AddOption(watchOption);
+        runCommand.AddOption(verboseOption);
+        runCommand.AddOption(quietOption);
+        runCommand.AddOption(notifyOption);
 
-        runCommand.SetHandler(RunPipeline, fileArg, interactiveOption, watchOption);
+        runCommand.SetHandler(RunPipeline, fileArg, interactiveOption, watchOption, verboseOption, quietOption, notifyOption);
 
         // ── pipeforge init <template> [--output] ──
         var initCommand = new Command("init", "Initialize a pipeline from a template");
@@ -37,6 +45,12 @@ class Program
         initCommand.AddArgument(templateArg);
         initCommand.AddOption(outputOption);
         initCommand.SetHandler(InitTemplate, templateArg, outputOption);
+
+        // ── pipeforge validate <file> ──
+        var validateCommand = new Command("validate", "Validate a pipeline YAML file without running it");
+        var validateFileArg = new Argument<FileInfo>("file", "Path to pipeline YAML file to validate");
+        validateCommand.AddArgument(validateFileArg);
+        validateCommand.SetHandler(ValidatePipeline, validateFileArg);
 
         // ── pipeforge templates ──
         var listCommand = new Command("templates", "List available pipeline templates");
@@ -55,28 +69,43 @@ class Program
 
         rootCommand.AddCommand(runCommand);
         rootCommand.AddCommand(initCommand);
+        rootCommand.AddCommand(validateCommand);
         rootCommand.AddCommand(listCommand);
 
         return await rootCommand.InvokeAsync(args);
     }
 
-    static async Task RunPipeline(FileInfo file, bool interactive, bool watch)
+    static async Task RunPipeline(FileInfo file, bool interactive, bool watch, bool verbose, bool quiet, bool notify)
     {
+        // Verbose wins if both are set
+        if (verbose && quiet)
+        {
+            AnsiConsole.MarkupLine("[yellow]Both --verbose and --quiet specified; using --verbose.[/]");
+            quiet = false;
+        }
+
+        var logLevel = verbose ? LogLevel.Debug
+                     : quiet ? LogLevel.Warning
+                     : LogLevel.Information;
+
         using var loggerFactory = LoggerFactory.Create(b => b
             .AddConsole()
-            .SetMinimumLevel(interactive ? LogLevel.Debug : LogLevel.Information));
+            .SetMinimumLevel(interactive ? LogLevel.Debug : logLevel));
 
         var engineLogger = loggerFactory.CreateLogger<PipelineEngine>();
         var watcherLogger = loggerFactory.CreateLogger<PipelineWatcher>();
 
         var engine = new PipelineEngine(engineLogger);
 
-        // Wire up real-time output display
-        engine.OnOutput += (_, line) =>
+        // Wire up real-time output display (suppressed in quiet mode)
+        if (!quiet)
         {
-            var color = line.Source == OutputSource.StdErr ? "red" : "grey";
-            AnsiConsole.MarkupLine($"    [{color}]{Markup.Escape(line.Text)}[/]");
-        };
+            engine.OnOutput += (_, line) =>
+            {
+                var color = line.Source == OutputSource.StdErr ? "red" : "grey";
+                AnsiConsole.MarkupLine($"    [{color}]{Markup.Escape(line.Text)}[/]");
+            };
+        }
 
         // Wire up the interactive step debugger
         if (interactive)
@@ -104,6 +133,26 @@ class Program
                 {
                     var last = e.Run.LastCompleted;
                     AnsiConsole.MarkupLine($"  Last step: [{(last.Status == StepStatus.Success ? "green" : "red")}]{last}[/]");
+
+                    // Show stderr + hints when last step failed
+                    if (last.Status == StepStatus.Failed)
+                    {
+                        var stderr = last.LastStderrLines();
+                        if (stderr.Count > 0)
+                        {
+                            AnsiConsole.Write(new Panel(
+                                string.Join("\n", stderr.Select(l => Markup.Escape(l))))
+                                .Header("[red]stderr (last 10 lines)[/]")
+                                .Border(BoxBorder.Rounded)
+                                .BorderStyle(Style.Parse("red")));
+                        }
+
+                        if (last.Hints.Count > 0)
+                        {
+                            foreach (var hint in last.Hints)
+                                AnsiConsole.MarkupLine($"  [yellow]→[/] {Markup.Escape(hint)}");
+                        }
+                    }
                 }
 
                 // Show variables
@@ -146,6 +195,20 @@ class Program
             return;
         }
 
+        // Trust check — show notice on first run or file modification
+        try
+        {
+            var trustStore = new TrustStore();
+            var trustCheck = trustStore.Check(file.FullName);
+            PrintTrustNotice(pipeline, trustCheck, file);
+            if (trustCheck.Status != TrustStatus.Trusted)
+                trustStore.Trust(file.FullName, trustCheck.CurrentHash);
+        }
+        catch
+        {
+            // Trust check is advisory — don't block execution if it fails
+        }
+
         if (watch && pipeline.Watch.Count > 0)
         {
             // Watch mode: run once, then watch for changes
@@ -165,12 +228,14 @@ class Program
             {
                 AnsiConsole.MarkupLine($"\n[blue]📂 Change detected:[/] {filePath}");
                 var run = await engine.RunAsync(pipeline, interactive, cts.Token);
-                PrintRunSummary(run);
+                PrintRunSummary(run, quiet);
+                NotifyCompletion(run, notify);
             };
 
             // Initial run
             var initialRun = await engine.RunAsync(pipeline, interactive, cts.Token);
-            PrintRunSummary(initialRun);
+            PrintRunSummary(initialRun, quiet);
+            NotifyCompletion(initialRun, notify);
 
             // Start watching
             watcher.Start(pipeline.Watch);
@@ -183,13 +248,13 @@ class Program
         {
             // Single run
             var run = await engine.RunAsync(pipeline, interactive);
-            PrintRunSummary(run);
+            PrintRunSummary(run, quiet);
 
             Environment.ExitCode = run.Status == PipelineRunStatus.Success ? 0 : 1;
         }
     }
 
-    static void PrintRunSummary(PipelineRun run)
+    static void PrintRunSummary(PipelineRun run, bool showFailureDetails = false)
     {
         AnsiConsole.WriteLine();
         var color = run.Status == PipelineRunStatus.Success ? "green" : "red";
@@ -210,7 +275,7 @@ class Program
                 StepStatus.Skipped => "dim",
                 _ => "yellow"
             };
-            
+
             table.AddRow(
                 $"{result.StageName} / {result.StepName}",
                 $"[{stepColor}]{result.Status}[/]",
@@ -219,6 +284,26 @@ class Program
         }
 
         AnsiConsole.Write(table);
+
+        // In quiet mode, stderr wasn't streamed — show failure details now
+        if (showFailureDetails)
+        {
+            foreach (var result in run.StepResults.Where(r => r.Status == StepStatus.Failed))
+            {
+                var stderr = result.LastStderrLines();
+                if (stderr.Count > 0)
+                {
+                    AnsiConsole.Write(new Panel(
+                        string.Join("\n", stderr.Select(l => Markup.Escape(l))))
+                        .Header($"[red]stderr: {Markup.Escape(result.StageName)}/{Markup.Escape(result.StepName)}[/]")
+                        .Border(BoxBorder.Rounded)
+                        .BorderStyle(Style.Parse("red")));
+                }
+
+                foreach (var hint in result.Hints)
+                    AnsiConsole.MarkupLine($"  [yellow]→[/] {Markup.Escape(hint)}");
+            }
+        }
 
         if (run.Artifacts.Count > 0)
         {
@@ -232,52 +317,102 @@ class Program
         AnsiConsole.MarkupLine($"\nTotal time: [bold]{run.Elapsed.TotalSeconds:F1}s[/]");
     }
 
+    static void ValidatePipeline(FileInfo file)
+    {
+        var result = PipelineValidator.ValidateFile(file.FullName);
+
+        if (result.Messages.Count == 0)
+        {
+            AnsiConsole.MarkupLine($"[green]✓[/] [bold]{file.Name}[/] is valid. No issues found.");
+            return;
+        }
+
+        foreach (var msg in result.Errors)
+            AnsiConsole.MarkupLine($"  [red]ERROR[/]   [[{Markup.Escape(msg.Location)}]] {Markup.Escape(msg.Message)}");
+
+        foreach (var msg in result.Warnings)
+            AnsiConsole.MarkupLine($"  [yellow]WARN[/]    [[{Markup.Escape(msg.Location)}]] {Markup.Escape(msg.Message)}");
+
+        AnsiConsole.WriteLine();
+        if (result.HasErrors)
+        {
+            AnsiConsole.MarkupLine($"[red]✗[/] [bold]{file.Name}[/]: {result.Errors.Count()} error(s), {result.Warnings.Count()} warning(s).");
+            Environment.ExitCode = 1;
+        }
+        else
+        {
+            AnsiConsole.MarkupLine($"[green]✓[/] [bold]{file.Name}[/]: valid with {result.Warnings.Count()} warning(s).");
+        }
+    }
+
+    static void NotifyCompletion(PipelineRun run, bool osNotify)
+    {
+        // Terminal bell — always in watch mode
+        Notifier.Bell();
+
+        // OS toast — only when --notify is set
+        if (osNotify)
+        {
+            var status = run.Status == PipelineRunStatus.Success ? "succeeded" : "failed";
+            Notifier.OsNotify("PipeForge", $"{run.PipelineName} {status} ({run.Elapsed.TotalSeconds:F1}s)");
+        }
+    }
+
+    static void PrintTrustNotice(PipelineDefinition pipeline, TrustCheckResult check, FileInfo file)
+    {
+        if (check.Status == TrustStatus.Trusted)
+            return;
+
+        var header = check.Status == TrustStatus.New
+            ? "[yellow]FIRST RUN[/]"
+            : "[yellow]FILE MODIFIED[/]";
+
+        AnsiConsole.WriteLine();
+        AnsiConsole.Write(new Rule(header).RuleStyle("yellow"));
+
+        AnsiConsole.MarkupLine($"  File: [bold]{Markup.Escape(file.FullName)}[/]");
+        AnsiConsole.MarkupLine($"  SHA-256: [dim]{check.CurrentHash[..16]}...[/]");
+
+        if (check.Status == TrustStatus.Modified)
+            AnsiConsole.MarkupLine($"  Previous: [dim]{check.PreviousHash![..16]}...[/]");
+
+        // Command summary — this is what makes it NOT security theater.
+        // The user sees exactly what shell commands will execute.
+        AnsiConsole.MarkupLine("\n  [bold]Commands this pipeline will execute:[/]");
+        foreach (var stage in pipeline.Stages)
+        {
+            AnsiConsole.MarkupLine($"  [dim]{Markup.Escape(stage.Name)}:[/]");
+            foreach (var step in stage.Steps)
+            {
+                var cmd = $"{step.Command} {step.Arguments ?? ""}".Trim();
+                AnsiConsole.MarkupLine($"    [dim]•[/] {Markup.Escape(cmd)}");
+            }
+        }
+
+        AnsiConsole.MarkupLine($"\n  [dim]Review the commands above. PipeForge will execute them as shell processes.[/]");
+        AnsiConsole.Write(new Rule().RuleStyle("yellow"));
+        AnsiConsole.WriteLine();
+    }
+
     static void InitTemplate(string template, FileInfo output)
     {
-        PipelineDefinition pipeline = template.ToLower() switch
+        string yaml;
+        try
         {
-            "innosetup" => PipelineTemplates.InnoSetupInstaller(
-                "MyApp", @".\installer\myapp.iss"),
-            "dotnet" => PipelineTemplates.DotNetBuild(
-                "MyProject", @".\MyProject.sln"),
-            "security" => PipelineTemplates.SecurityScan(
-                "MyProject", "."),
-            "twincat" => PipelineTemplates.TwinCatBuild(
-                "MyPLC", @".\MyPLC.sln"),
-            "custom" => new PipelineDefinition
-            {
-                Name = "My Pipeline",
-                Description = "Describe your pipeline here",
-                Variables = new Dictionary<string, string>
-                {
-                    ["MY_VAR"] = "my_value"
-                },
-                Watch = new List<WatchTrigger>
-                {
-                    new() { Path = ".", Filter = "*.*", DebounceMs = 500 }
-                },
-                Stages = new List<PipelineStage>
-                {
-                    new()
-                    {
-                        Name = "build",
-                        Steps = new List<PipelineStep>
-                        {
-                            new()
-                            {
-                                Name = "My Step",
-                                Command = "echo",
-                                Arguments = "Hello from PipeForge!",
-                                Breakpoint = BreakpointMode.Always
-                            }
-                        }
-                    }
-                }
-            },
-            _ => throw new ArgumentException($"Unknown template: {template}")
-        };
+            yaml = CommentedYamlTemplates.GetTemplate(template);
+        }
+        catch (ArgumentException)
+        {
+            AnsiConsole.MarkupLine($"[red]✗[/] Unknown template: [bold]{template}[/]");
+            AnsiConsole.MarkupLine("  Available: innosetup, dotnet, security, twincat, custom");
+            return;
+        }
 
-        PipelineLoader.SaveToFile(pipeline, output.FullName);
+        var directory = Path.GetDirectoryName(output.FullName);
+        if (directory != null && !Directory.Exists(directory))
+            Directory.CreateDirectory(directory);
+        File.WriteAllText(output.FullName, yaml);
+
         AnsiConsole.MarkupLine($"[green]✓[/] Created [bold]{output.FullName}[/] from template [bold]{template}[/]");
         AnsiConsole.MarkupLine($"  Edit the file, then run: [bold]pipeforge run {output.Name} --interactive[/]");
     }

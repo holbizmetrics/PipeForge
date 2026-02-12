@@ -1,0 +1,69 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:ae="using:AvaloniaEdit"
+             xmlns:vm="using:PipeForge.GUI.ViewModels"
+             x:Class="PipeForge.GUI.Views.TemplateBrowserView"
+             x:DataType="vm:TemplateBrowserViewModel">
+
+    <Grid ColumnDefinitions="250,*">
+        <!-- Template List (left) -->
+        <Border Grid.Column="0" Background="#1E1E2E" Padding="8">
+            <DockPanel>
+                <TextBlock DockPanel.Dock="Top"
+                           Text="Templates"
+                           FontWeight="Bold"
+                           FontSize="16"
+                           Foreground="#CDD6F4"
+                           Margin="4,4,4,12" />
+
+                <Button DockPanel.Dock="Bottom"
+                        Content="Create Pipeline..."
+                        Command="{Binding CreateFromTemplateCommand}"
+                        IsEnabled="{Binding SelectedTemplate, Converter={x:Static ObjectConverters.IsNotNull}}"
+                        HorizontalAlignment="Stretch"
+                        Margin="0,8,0,0"
+                        Padding="8" />
+
+                <ListBox ItemsSource="{Binding Templates}"
+                         SelectedItem="{Binding SelectedTemplate}"
+                         Background="Transparent"
+                         BorderThickness="0">
+                    <ListBox.ItemTemplate>
+                        <DataTemplate>
+                            <StackPanel Margin="4,8">
+                                <TextBlock Text="{Binding Name}"
+                                           FontWeight="Bold"
+                                           Foreground="#CDD6F4" />
+                                <TextBlock Text="{Binding Description}"
+                                           Foreground="#A6ADC8"
+                                           FontSize="12"
+                                           TextWrapping="Wrap" />
+                            </StackPanel>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+            </DockPanel>
+        </Border>
+
+        <!-- YAML Preview (right) -->
+        <Border Grid.Column="1" Background="#11111B" Padding="8">
+            <DockPanel>
+                <TextBlock DockPanel.Dock="Top"
+                           Text="Template Preview"
+                           FontWeight="Bold"
+                           FontSize="14"
+                           Foreground="#CDD6F4"
+                           Margin="4,4,4,8" />
+
+                <ae:TextEditor Name="PreviewEditor"
+                               FontFamily="Cascadia Code,Consolas,Courier New"
+                               FontSize="13"
+                               ShowLineNumbers="True"
+                               IsReadOnly="True"
+                               Background="#1E1E2E"
+                               Foreground="#CDD6F4" />
+            </DockPanel>
+        </Border>
+    </Grid>
+
+</UserControl>

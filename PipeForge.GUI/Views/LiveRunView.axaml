@@ -1,0 +1,102 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:PipeForge.GUI.ViewModels"
+             x:Class="PipeForge.GUI.Views.LiveRunView"
+             x:DataType="vm:LiveRunViewModel">
+
+    <DockPanel>
+        <!-- Toolbar -->
+        <Border DockPanel.Dock="Top" Padding="8" Background="#181825">
+            <StackPanel Orientation="Horizontal" Spacing="8">
+                <Button Content="Run Pipeline..."
+                        Command="{Binding RunPipelineCommand}"
+                        IsEnabled="{Binding !IsRunning}" />
+                <Button Content="Cancel"
+                        Command="{Binding CancelRunCommand}"
+                        IsEnabled="{Binding IsRunning}" />
+                <Separator />
+                <TextBlock Text="{Binding StatusText}"
+                           VerticalAlignment="Center"
+                           Foreground="#A6ADC8"
+                           Margin="8,0" />
+            </StackPanel>
+        </Border>
+
+        <!-- Breakpoint Panel (visible when paused) -->
+        <Border DockPanel.Dock="Top"
+                IsVisible="{Binding IsPaused}"
+                Background="#313244"
+                Padding="12"
+                Margin="0,0,0,4">
+            <DockPanel>
+                <StackPanel DockPanel.Dock="Left" Spacing="4">
+                    <TextBlock Text="BREAKPOINT" FontWeight="Bold" Foreground="#F9E2AF" FontSize="14" />
+                    <TextBlock Foreground="#CDD6F4">
+                        <Run Text="{Binding BreakpointStageName}" />
+                        <Run Text=" / " />
+                        <Run Text="{Binding BreakpointStepName}" FontWeight="Bold" />
+                    </TextBlock>
+                    <TextBlock Text="{Binding BreakpointInfo}" Foreground="#A6ADC8" FontSize="12" />
+                </StackPanel>
+
+                <StackPanel DockPanel.Dock="Right"
+                            Orientation="Horizontal"
+                            Spacing="8"
+                            VerticalAlignment="Center"
+                            HorizontalAlignment="Right">
+                    <Button Content="Continue" Command="{Binding ContinueStepCommand}" />
+                    <Button Content="Skip" Command="{Binding SkipStepCommand}" />
+                    <Button Content="Retry" Command="{Binding RetryStepCommand}" />
+                    <Button Content="Abort" Command="{Binding AbortPipelineCommand}" />
+                </StackPanel>
+            </DockPanel>
+        </Border>
+
+        <!-- Step Results Table (bottom) -->
+        <Border DockPanel.Dock="Bottom" Height="200" Background="#1E1E2E" Padding="4">
+            <DockPanel>
+                <TextBlock DockPanel.Dock="Top"
+                           Text="Step Results"
+                           FontWeight="Bold"
+                           Foreground="#CDD6F4"
+                           Margin="4,4,4,8" />
+
+                <ListBox ItemsSource="{Binding StepResults}"
+                         Background="Transparent"
+                         BorderThickness="0">
+                    <ListBox.ItemTemplate>
+                        <DataTemplate>
+                            <Grid ColumnDefinitions="120,150,80,60,60" Margin="0,2">
+                                <TextBlock Grid.Column="0" Text="{Binding Stage}" Foreground="#89B4FA" />
+                                <TextBlock Grid.Column="1" Text="{Binding Step}" Foreground="#CDD6F4" FontWeight="Bold" />
+                                <TextBlock Grid.Column="2" Text="{Binding Status}"
+                                           Foreground="{Binding IsFailed, Converter={StaticResource BoolToColor}, ConverterParameter=#F38BA8|#A6E3A1}" />
+                                <TextBlock Grid.Column="3" Text="{Binding Duration}" Foreground="#A6ADC8" />
+                                <TextBlock Grid.Column="4" Text="{Binding ExitCode}" Foreground="#A6ADC8" />
+                            </Grid>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+            </DockPanel>
+        </Border>
+
+        <!-- Output Log (center) -->
+        <Border Background="#11111B" Padding="4">
+            <ListBox ItemsSource="{Binding OutputLines}"
+                     Background="Transparent"
+                     BorderThickness="0"
+                     Name="OutputListBox">
+                <ListBox.ItemTemplate>
+                    <DataTemplate>
+                        <TextBlock Text="{Binding Text}"
+                                   FontFamily="Cascadia Code,Consolas,Courier New"
+                                   FontSize="12"
+                                   Foreground="{Binding IsError, Converter={StaticResource BoolToColor}, ConverterParameter=#F38BA8|#BAC2DE}"
+                                   TextWrapping="NoWrap" />
+                    </DataTemplate>
+                </ListBox.ItemTemplate>
+            </ListBox>
+        </Border>
+    </DockPanel>
+
+</UserControl>

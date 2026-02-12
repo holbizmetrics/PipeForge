@@ -1,5 +1,3 @@
-using System.Diagnostics;
-
 namespace PipeForge.Core.Models;
 
 /// <summary>
@@ -68,7 +66,7 @@ public class StepResult
     /// <summary>
     /// Combined output in chronological order.
     /// </summary>
-    public string FullOutput => string.Join(Environment.NewLine, 
+    public string FullOutput => string.Join(System.Environment.NewLine, 
         StandardOutput.Concat(StandardError)
             .OrderBy(l => l.Timestamp)
             .Select(l => l.Text));
@@ -84,8 +82,54 @@ public class StepResult
     public List<string> ArtifactsProduced { get; } = new();
     
     public string? ErrorMessage { get; set; }
-    
-    public override string ToString() => 
+
+    /// <summary>
+    /// Last N lines of stderr — the most useful slice when something fails.
+    /// Visible immediately in the debugger without drilling into StandardError.
+    /// </summary>
+    public IReadOnlyList<string> LastStderrLines(int count = 10) =>
+        StandardError
+            .Select(l => l.Text)
+            .TakeLast(count)
+            .ToList();
+
+    /// <summary>
+    /// One-glance error summary: exit code + last stderr lines + hints.
+    /// This is what the breakpoint prompt shows.
+    /// </summary>
+    public string ErrorSummary
+    {
+        get
+        {
+            if (Status != StepStatus.Failed) return string.Empty;
+
+            var parts = new List<string>();
+            parts.Add($"Exit code {ExitCode}");
+
+            var stderr = LastStderrLines();
+            if (stderr.Count > 0)
+            {
+                parts.Add("Last stderr:");
+                parts.AddRange(stderr.Select(l => $"  {l}"));
+            }
+
+            if (Hints.Count > 0)
+            {
+                parts.Add("Suggestions:");
+                parts.AddRange(Hints.Select(h => $"  → {h}"));
+            }
+
+            return string.Join(System.Environment.NewLine, parts);
+        }
+    }
+
+    /// <summary>
+    /// Pattern-matched suggestions based on error output.
+    /// Populated after step execution by ErrorHints.
+    /// </summary>
+    public List<string> Hints { get; } = [];
+
+    public override string ToString() =>
         $"[{Status}] {StageName}/{StepName} (exit: {ExitCode}, {Elapsed.TotalSeconds:F1}s)";
 }
 

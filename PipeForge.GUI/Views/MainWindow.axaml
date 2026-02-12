@@ -1,0 +1,50 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:PipeForge.GUI.ViewModels"
+        x:Class="PipeForge.GUI.Views.MainWindow"
+        x:DataType="vm:MainWindowViewModel"
+        Title="PipeForge"
+        Width="1200" Height="800"
+        MinWidth="800" MinHeight="600">
+
+    <DockPanel>
+        <!-- Navigation Sidebar -->
+        <Border DockPanel.Dock="Left" Width="200" Background="#1E1E2E" Padding="8">
+            <DockPanel>
+                <!-- App Title -->
+                <TextBlock DockPanel.Dock="Top"
+                           Text="PipeForge"
+                           FontSize="20" FontWeight="Bold"
+                           Foreground="#CDD6F4"
+                           Margin="8,12,8,20"
+                           HorizontalAlignment="Center" />
+
+                <!-- Nav Buttons -->
+                <StackPanel DockPanel.Dock="Top" Spacing="4">
+                    <Button Content="Templates"
+                            Command="{Binding NavigateToTemplatesCommand}"
+                            HorizontalAlignment="Stretch"
+                            HorizontalContentAlignment="Left"
+                            Padding="12,10" />
+                    <Button Content="Editor"
+                            Command="{Binding NavigateToEditorCommand}"
+                            HorizontalAlignment="Stretch"
+                            HorizontalContentAlignment="Left"
+                            Padding="12,10" />
+                    <Button Content="Run"
+                            Command="{Binding NavigateToRunCommand}"
+                            HorizontalAlignment="Stretch"
+                            HorizontalContentAlignment="Left"
+                            Padding="12,10" />
+                </StackPanel>
+
+                <!-- Spacer -->
+                <Panel />
+            </DockPanel>
+        </Border>
+
+        <!-- Main Content Area -->
+        <ContentControl Content="{Binding CurrentView}" Margin="0" />
+    </DockPanel>
+
+</Window>

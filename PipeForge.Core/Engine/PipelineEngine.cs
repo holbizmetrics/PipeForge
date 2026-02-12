@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using Microsoft.Extensions.Logging;
 using PipeForge.Core.Models;
 
@@ -86,8 +85,8 @@ public class PipelineEngine
             Variables = new Dictionary<string, string>(pipeline.Variables)
         };
 
-        // Resolve working directory
-        var workDir = pipeline.WorkingDirectory ?? Directory.GetCurrentDirectory();
+        // Resolve working directory (normalize for OS — ~ expansion, separator fix)
+        var workDir = PathNormalizer.Normalize(pipeline.WorkingDirectory ?? Directory.GetCurrentDirectory());
         run.Variables["PIPEFORGE_WORK_DIR"] = workDir;
         run.Variables["PIPEFORGE_RUN_ID"] = run.RunId.ToString();
         run.Variables["PIPEFORGE_PIPELINE"] = pipeline.Name;
@@ -229,8 +228,8 @@ public class PipelineEngine
 
         run.StepResults.Add(result);
 
-        var stepWorkDir = step.WorkingDirectory != null 
-            ? ResolveVariables(step.WorkingDirectory, run.Variables)
+        var stepWorkDir = step.WorkingDirectory != null
+            ? PathNormalizer.Normalize(ResolveVariables(step.WorkingDirectory, run.Variables), defaultWorkDir)
             : defaultWorkDir;
 
         var resolvedCommand = ResolveVariables(step.Command, run.Variables);
@@ -266,12 +265,15 @@ public class PipelineEngine
             result.Status = exitCode == 0 ? StepStatus.Success : StepStatus.Failed;
 
             if (result.Status == StepStatus.Failed)
+            {
                 result.ErrorMessage = $"Process exited with code {exitCode}";
+                ErrorHints.Analyze(result);
+            }
 
             // Collect artifacts
             foreach (var pattern in step.Artifacts)
             {
-                var resolvedPattern = ResolveVariables(pattern, run.Variables);
+                var resolvedPattern = PathNormalizer.NormalizeSeparators(ResolveVariables(pattern, run.Variables));
                 var artifactDir = Path.GetDirectoryName(resolvedPattern) ?? stepWorkDir;
                 var artifactFilter = Path.GetFileName(resolvedPattern);
                 
@@ -296,6 +298,7 @@ public class PipelineEngine
         {
             result.Status = StepStatus.Failed;
             result.ErrorMessage = ex.Message;
+            ErrorHints.Analyze(result);
             _logger.LogError(ex, "Step '{Step}' threw an exception", step.Name);
         }
         finally
@@ -354,7 +357,7 @@ public class PipelineEngine
         {
             foreach (var file in stage.Condition.RequiresFiles)
             {
-                var resolved = ResolveVariables(file, run.Variables);
+                var resolved = PathNormalizer.Normalize(ResolveVariables(file, run.Variables));
                 if (!File.Exists(resolved))
                 {
                     _logger.LogDebug("Stage '{Stage}' skipped: required file '{File}' not found", 

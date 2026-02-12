@@ -1,0 +1,29 @@
+<Application xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:PipeForge.GUI.ViewModels"
+             xmlns:views="using:PipeForge.GUI.Views"
+             xmlns:conv="using:PipeForge.GUI.Converters"
+             x:Class="PipeForge.GUI.App"
+             RequestedThemeVariant="Dark">
+
+    <Application.Resources>
+        <conv:BoolToColorConverter x:Key="BoolToColor" />
+    </Application.Resources>
+
+    <Application.Styles>
+        <FluentTheme />
+    </Application.Styles>
+
+    <Application.DataTemplates>
+        <DataTemplate DataType="{x:Type vm:PipelineEditorViewModel}">
+            <views:PipelineEditorView />
+        </DataTemplate>
+        <DataTemplate DataType="{x:Type vm:LiveRunViewModel}">
+            <views:LiveRunView />
+        </DataTemplate>
+        <DataTemplate DataType="{x:Type vm:TemplateBrowserViewModel}">
+            <views:TemplateBrowserView />
+        </DataTemplate>
+    </Application.DataTemplates>
+
+</Application>
