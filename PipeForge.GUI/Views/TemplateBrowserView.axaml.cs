@@ -1,4 +1,5 @@
 using Avalonia.Controls;
+using Avalonia.Threading;
 using AvaloniaEdit;
 using AvaloniaEdit.TextMate;
 using PipeForge.GUI.ViewModels;
@@ -16,14 +17,11 @@ public partial class TemplateBrowserView : UserControl
         _previewEditor = this.FindControl<TextEditor>("PreviewEditor");
 
         if (_previewEditor != null)
-            InstallTextMate(_previewEditor);
-    }
-
-    private static void InstallTextMate(TextEditor editor)
-    {
-        var registryOptions = new RegistryOptions(ThemeName.DarkPlus);
-        var installation = editor.InstallTextMate(registryOptions);
-        installation.SetGrammar(registryOptions.GetScopeByLanguageId("yaml"));
+        {
+            var registryOptions = new RegistryOptions(ThemeName.DarkPlus);
+            var installation = _previewEditor.InstallTextMate(registryOptions);
+            installation.SetGrammar(registryOptions.GetScopeByLanguageId("yaml"));
+        }
     }
 
     protected override void OnDataContextChanged(EventArgs e)
@@ -32,13 +30,20 @@ public partial class TemplateBrowserView : UserControl
 
         if (_previewEditor != null && DataContext is TemplateBrowserViewModel vm)
         {
-            // Sync preview content
-            _previewEditor.Text = vm.PreviewYaml;
+            // Initial sync
+            if (!string.IsNullOrEmpty(vm.PreviewYaml))
+                _previewEditor.Document.Text = vm.PreviewYaml;
 
+            // ViewModel → Editor
             vm.PropertyChanged += (_, args) =>
             {
                 if (args.PropertyName == nameof(vm.PreviewYaml))
-                    _previewEditor.Text = vm.PreviewYaml;
+                {
+                    Dispatcher.UIThread.Post(() =>
+                    {
+                        _previewEditor.Document.Text = vm.PreviewYaml ?? string.Empty;
+                    });
+                }
             };
         }
     }

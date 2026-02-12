@@ -12,6 +12,7 @@ public partial class LiveRunViewModel : ObservableObject
     private PipelineEngine? _engine;
     private CancellationTokenSource? _cts;
     private TaskCompletionSource<DebugAction>? _breakpointTcs;
+    private ILoggerFactory? _loggerFactory;
 
     [ObservableProperty]
     private ObservableCollection<OutputLineItem> _outputLines = new();
@@ -114,8 +115,8 @@ public partial class LiveRunViewModel : ObservableObject
         catch { /* advisory */ }
 
         // Create engine
-        using var loggerFactory = LoggerFactory.Create(b => b.SetMinimumLevel(LogLevel.Debug));
-        _engine = new PipelineEngine(loggerFactory.CreateLogger<PipelineEngine>());
+        _loggerFactory = LoggerFactory.Create(b => b.SetMinimumLevel(LogLevel.Debug));
+        _engine = new PipelineEngine(_loggerFactory.CreateLogger<PipelineEngine>());
         _cts = new CancellationTokenSource();
 
         // Wire real-time output
@@ -197,6 +198,8 @@ public partial class LiveRunViewModel : ObservableObject
         {
             IsRunning = false;
             _engine = null;
+            _loggerFactory?.Dispose();
+            _loggerFactory = null;
         }
     }
 

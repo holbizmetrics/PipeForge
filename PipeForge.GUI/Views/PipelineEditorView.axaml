@@ -28,8 +28,6 @@
                            FontFamily="Cascadia Code,Consolas,Courier New"
                            FontSize="13"
                            ShowLineNumbers="True"
-                           Background="#1E1E2E"
-                           Foreground="#CDD6F4"
                            Margin="0,0,4,0" />
 
             <!-- Validation Panel -->

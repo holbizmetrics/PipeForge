@@ -8,13 +8,17 @@ namespace PipeForge.GUI.Services;
 /// Service layer wrapping PipeForge.Core for GUI consumption.
 /// Creates engine instances with proper logging.
 /// </summary>
-public class PipelineService
+public class PipelineService : IDisposable
 {
-    public PipelineEngine CreateEngine()
+    private readonly ILoggerFactory _loggerFactory;
+
+    public PipelineService()
     {
-        using var loggerFactory = LoggerFactory.Create(b => b.SetMinimumLevel(LogLevel.Debug));
-        return new PipelineEngine(loggerFactory.CreateLogger<PipelineEngine>());
+        _loggerFactory = LoggerFactory.Create(b => b.SetMinimumLevel(LogLevel.Debug));
     }
+
+    public PipelineEngine CreateEngine()
+        => new PipelineEngine(_loggerFactory.CreateLogger<PipelineEngine>());
 
     public PipelineDefinition LoadPipeline(string path)
         => PipelineLoader.LoadFromFile(path);
@@ -32,5 +36,10 @@ public class PipelineService
     {
         var store = new TrustStore();
         store.Trust(path, hash);
+    }
+
+    public void Dispose()
+    {
+        _loggerFactory.Dispose();
     }
 }

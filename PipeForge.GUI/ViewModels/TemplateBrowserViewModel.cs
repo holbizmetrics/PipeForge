@@ -63,12 +63,20 @@ public partial class TemplateBrowserViewModel : ObservableObject
         if (file != null)
         {
             var path = file.Path.LocalPath;
-            await File.WriteAllTextAsync(path, PreviewYaml);
-
-            // Navigate to editor with the new file
-            if (topLevel.DataContext is MainWindowViewModel mainVm)
+            try
             {
-                mainVm.NavigateToEditorWithContent(PreviewYaml, path);
+                await File.WriteAllTextAsync(path, PreviewYaml);
+
+                // Navigate to editor with the new file
+                if (topLevel.DataContext is MainWindowViewModel mainVm)
+                {
+                    mainVm.NavigateToEditorWithContent(PreviewYaml, path);
+                }
+            }
+            catch (Exception ex)
+            {
+                // Show error in preview area since we don't have a StatusText here
+                PreviewYaml = $"# Failed to save: {ex.Message}\n\n{PreviewYaml}";
             }
         }
     }

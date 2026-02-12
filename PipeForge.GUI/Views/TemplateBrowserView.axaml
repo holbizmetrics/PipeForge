@@ -59,9 +59,7 @@
                                FontFamily="Cascadia Code,Consolas,Courier New"
                                FontSize="13"
                                ShowLineNumbers="True"
-                               IsReadOnly="True"
-                               Background="#1E1E2E"
-                               Foreground="#CDD6F4" />
+                               IsReadOnly="True" />
             </DockPanel>
         </Border>
     </Grid>

@@ -6,7 +6,7 @@ using PipeForge.Core.Engine;
 
 namespace PipeForge.GUI.ViewModels;
 
-public partial class PipelineEditorViewModel : ObservableObject
+public partial class PipelineEditorViewModel : ObservableObject, IDisposable
 {
     private readonly System.Timers.Timer _debounceTimer;
     private string? _currentFilePath;
@@ -79,9 +79,16 @@ public partial class PipelineEditorViewModel : ObservableObject
         if (files.Count > 0)
         {
             var path = files[0].Path.LocalPath;
-            _currentFilePath = path;
-            YamlContent = await File.ReadAllTextAsync(path);
-            StatusText = $"Loaded: {path}";
+            try
+            {
+                _currentFilePath = path;
+                YamlContent = await File.ReadAllTextAsync(path);
+                StatusText = $"Loaded: {path}";
+            }
+            catch (Exception ex)
+            {
+                StatusText = $"Failed to open: {ex.Message}";
+            }
         }
     }
 
@@ -90,8 +97,15 @@ public partial class PipelineEditorViewModel : ObservableObject
     {
         if (_currentFilePath != null)
         {
-            await File.WriteAllTextAsync(_currentFilePath, YamlContent);
-            StatusText = $"Saved: {_currentFilePath}";
+            try
+            {
+                await File.WriteAllTextAsync(_currentFilePath, YamlContent);
+                StatusText = $"Saved: {_currentFilePath}";
+            }
+            catch (Exception ex)
+            {
+                StatusText = $"Failed to save: {ex.Message}";
+            }
             return;
         }
 
@@ -112,8 +126,15 @@ public partial class PipelineEditorViewModel : ObservableObject
         if (file != null)
         {
             _currentFilePath = file.Path.LocalPath;
-            await File.WriteAllTextAsync(_currentFilePath, YamlContent);
-            StatusText = $"Saved: {_currentFilePath}";
+            try
+            {
+                await File.WriteAllTextAsync(_currentFilePath, YamlContent);
+                StatusText = $"Saved: {_currentFilePath}";
+            }
+            catch (Exception ex)
+            {
+                StatusText = $"Failed to save: {ex.Message}";
+            }
         }
     }
 
@@ -150,6 +171,12 @@ public partial class PipelineEditorViewModel : ObservableObject
             ValidationOutput = "Valid. No issues found.";
         else
             ValidationOutput = $"{result.Errors.Count()} error(s), {result.Warnings.Count()} warning(s)";
+    }
+
+    public void Dispose()
+    {
+        _debounceTimer.Stop();
+        _debounceTimer.Dispose();
     }
 }
 

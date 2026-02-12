@@ -1,4 +1,5 @@
 using Avalonia.Controls;
+using Avalonia.Threading;
 using AvaloniaEdit;
 using AvaloniaEdit.TextMate;
 using PipeForge.GUI.ViewModels;
@@ -9,6 +10,8 @@ namespace PipeForge.GUI.Views;
 public partial class PipelineEditorView : UserControl
 {
     private TextEditor? _editor;
+    private bool _updatingFromEditor;
+    private bool _updatingFromViewModel;
 
     public PipelineEditorView()
     {
@@ -17,14 +20,11 @@ public partial class PipelineEditorView : UserControl
         _editor = this.FindControl<TextEditor>("YamlEditor");
 
         if (_editor != null)
-            InstallTextMate(_editor);
-    }
-
-    private static void InstallTextMate(TextEditor editor)
-    {
-        var registryOptions = new RegistryOptions(ThemeName.DarkPlus);
-        var installation = editor.InstallTextMate(registryOptions);
-        installation.SetGrammar(registryOptions.GetScopeByLanguageId("yaml"));
+        {
+            var registryOptions = new RegistryOptions(ThemeName.DarkPlus);
+            var installation = _editor.InstallTextMate(registryOptions);
+            installation.SetGrammar(registryOptions.GetScopeByLanguageId("yaml"));
+        }
     }
 
     protected override void OnDataContextChanged(EventArgs e)
@@ -33,21 +33,33 @@ public partial class PipelineEditorView : UserControl
 
         if (_editor != null && DataContext is PipelineEditorViewModel vm)
         {
-            // Initial content load
-            _editor.Text = vm.YamlContent;
+            // Initial content
+            if (!string.IsNullOrEmpty(vm.YamlContent))
+                _editor.Document.Text = vm.YamlContent;
 
             // ViewModel → Editor
             vm.PropertyChanged += (_, args) =>
             {
-                if (args.PropertyName == nameof(vm.YamlContent) && _editor.Text != vm.YamlContent)
-                    _editor.Text = vm.YamlContent;
+                if (args.PropertyName == nameof(vm.YamlContent) && !_updatingFromEditor)
+                {
+                    _updatingFromViewModel = true;
+                    Dispatcher.UIThread.Post(() =>
+                    {
+                        _editor.Document.Text = vm.YamlContent ?? string.Empty;
+                        _updatingFromViewModel = false;
+                    });
+                }
             };
 
             // Editor → ViewModel
-            _editor.TextChanged += (_, _) =>
+            _editor.Document.TextChanged += (_, _) =>
             {
-                if (_editor.Text != vm.YamlContent)
-                    vm.YamlContent = _editor.Text ?? string.Empty;
+                if (!_updatingFromViewModel)
+                {
+                    _updatingFromEditor = true;
+                    vm.YamlContent = _editor.Document.Text;
+                    _updatingFromEditor = false;
+                }
             };
         }
     }
