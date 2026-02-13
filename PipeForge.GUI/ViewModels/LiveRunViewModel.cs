@@ -64,6 +64,9 @@ public partial class LiveRunViewModel : ObservableObject
     [ObservableProperty]
     private bool _showSource;
 
+    [ObservableProperty]
+    private bool _autoScrollSource = true;
+
     [RelayCommand]
     private async Task RunPipelineAsync()
     {

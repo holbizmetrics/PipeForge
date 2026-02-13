@@ -1,8 +1,11 @@
 using System.Collections.Specialized;
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Media;
 using AvaloniaEdit;
+using AvaloniaEdit.Document;
+using AvaloniaEdit.Rendering;
 using AvaloniaEdit.TextMate;
 using PipeForge.GUI.ViewModels;
 using TextMateSharp.Grammars;
@@ -13,6 +16,7 @@ public partial class LiveRunView : UserControl
 {
     private TextEditor? _sourceEditor;
     private TextMate.Installation? _tmInstallation;
+    private CurrentStepHighlighter? _highlighter;
 
     public LiveRunView()
     {
@@ -54,7 +58,7 @@ public partial class LiveRunView : UserControl
             {
                 Avalonia.Threading.Dispatcher.UIThread.Post(() =>
                 {
-                    ScrollToLine(vm.YamlHighlightLine);
+                    HighlightLine(vm.YamlHighlightLine, vm.AutoScrollSource);
                 });
             }
             else if (args.PropertyName == nameof(vm.ShowSource) && vm.ShowSource)
@@ -63,7 +67,11 @@ public partial class LiveRunView : UserControl
                 {
                     EnsureSourceEditor();
                     if (_sourceEditor != null && !string.IsNullOrEmpty(vm.YamlSource))
+                    {
                         _sourceEditor.Document.Text = vm.YamlSource;
+                        if (vm.YamlHighlightLine > 0)
+                            HighlightLine(vm.YamlHighlightLine, vm.AutoScrollSource);
+                    }
                 });
             }
         };
@@ -102,18 +110,37 @@ public partial class LiveRunView : UserControl
             _sourceEditor.TextArea.TextView.CurrentLineBackground = new SolidColorBrush(hl);
             _sourceEditor.TextArea.TextView.CurrentLineBorder = new Pen(new SolidColorBrush(hl));
         }
+
+        // Add custom highlight renderer for current step
+        _highlighter = new CurrentStepHighlighter(_sourceEditor.Document);
+        _sourceEditor.TextArea.TextView.BackgroundRenderers.Add(_highlighter);
     }
 
-    private void ScrollToLine(int line)
+    private void HighlightLine(int line, bool autoScroll)
     {
         if (_sourceEditor == null || line <= 0) return;
 
         var doc = _sourceEditor.Document;
         if (line > doc.LineCount) return;
 
-        _sourceEditor.TextArea.Caret.Line = line;
-        _sourceEditor.TextArea.Caret.Column = 1;
-        _sourceEditor.ScrollToLine(line);
+        // Always update the highlight band
+        if (_highlighter != null)
+        {
+            _highlighter.HighlightedLine = line;
+            _sourceEditor.TextArea.TextView.InvalidateLayer(KnownLayer.Background);
+        }
+
+        if (autoScroll)
+        {
+            _sourceEditor.TextArea.Caret.Line = line;
+            _sourceEditor.TextArea.Caret.Column = 1;
+
+            // Defer scroll to after layout pass so the editor has rendered
+            Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+            {
+                _sourceEditor.ScrollToLine(line);
+            }, Avalonia.Threading.DispatcherPriority.Background);
+        }
     }
 
     private void StepListBox_DoubleTapped(object? sender, TappedEventArgs e)
@@ -124,6 +151,41 @@ public partial class LiveRunView : UserControl
             {
                 vm.ToggleBreakpointCommand.Execute(item);
             }
+        }
+    }
+}
+
+/// <summary>
+/// Renders a yellow highlight band on the current step's YAML line.
+/// </summary>
+internal class CurrentStepHighlighter : IBackgroundRenderer
+{
+    private static readonly IBrush HighlightBrush = new SolidColorBrush(Color.Parse("#33F9E2AF")); // semi-transparent yellow
+    private static readonly IPen HighlightBorder = new Pen(new SolidColorBrush(Color.Parse("#F9E2AF")), 1);
+
+    private readonly TextDocument _document;
+
+    public int HighlightedLine { get; set; }
+
+    public KnownLayer Layer => KnownLayer.Background;
+
+    public CurrentStepHighlighter(TextDocument document)
+    {
+        _document = document;
+    }
+
+    public void Draw(TextView textView, DrawingContext drawingContext)
+    {
+        if (HighlightedLine <= 0 || HighlightedLine > _document.LineCount) return;
+
+        textView.EnsureVisualLines();
+        var line = _document.GetLineByNumber(HighlightedLine);
+
+        foreach (var rect in BackgroundGeometryBuilder.GetRectsForSegment(textView, line))
+        {
+            // Draw full-width highlight
+            var fullRect = new Rect(0, rect.Top, textView.Bounds.Width, rect.Height);
+            drawingContext.DrawRectangle(HighlightBrush, HighlightBorder, fullRect);
         }
     }
 }
