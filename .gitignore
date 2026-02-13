@@ -1,6 +1,9 @@
 bin/
 obj/
 .vs/
+.claude/
+.prometheus/
+Prometheus.env/
 publish/
 *.user
 *.suo

@@ -1,5 +1,6 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:ae="using:AvaloniaEdit"
              xmlns:vm="using:PipeForge.GUI.ViewModels"
              xmlns:conv="using:PipeForge.GUI.Converters"
              x:Class="PipeForge.GUI.Views.LiveRunView"
@@ -38,6 +39,9 @@
                 <Button Content="Abort"
                         Command="{Binding AbortPipelineCommand}"
                         IsEnabled="{Binding IsPaused}" />
+                <Separator />
+                <Button Content="Source"
+                        Command="{Binding ToggleSourceCommand}" />
             </StackPanel>
         </Border>
 
@@ -74,99 +78,127 @@
             </StackPanel>
         </Border>
 
-        <!-- Main content: Step Progress (left) + Output Log (right) -->
-        <Grid ColumnDefinitions="260,*">
+        <!-- Main content: vertical split (top: steps+output, bottom: source) -->
+        <Grid RowDefinitions="*,Auto">
 
-            <!-- Step Progress Panel -->
-            <Border Grid.Column="0" Background="#1E1E2E" Padding="4">
+            <!-- Top: Step Progress (left) + Output Log (right) -->
+            <Grid Grid.Row="0" ColumnDefinitions="260,*">
+
+                <!-- Step Progress Panel -->
+                <Border Grid.Column="0" Background="#1E1E2E" Padding="4">
+                    <DockPanel>
+                        <TextBlock DockPanel.Dock="Top"
+                                   FontWeight="Bold"
+                                   Foreground="#CDD6F4"
+                                   Margin="4,4,4,8">
+                            <Run Text="Steps" />
+                            <Run Text="  (double-click to toggle breakpoint)" Foreground="#585B70" FontSize="11" FontWeight="Normal" />
+                        </TextBlock>
+
+                        <ListBox ItemsSource="{Binding StepProgress}"
+                                 Background="Transparent"
+                                 BorderThickness="0"
+                                 Name="StepListBox"
+                                 DoubleTapped="StepListBox_DoubleTapped">
+                            <ListBox.ItemTemplate>
+                                <DataTemplate x:DataType="vm:StepProgressItem">
+                                    <Grid ColumnDefinitions="20,20,*,Auto,Auto" Margin="0,2">
+                                        <!-- Breakpoint indicator (red dot when set) -->
+                                        <Ellipse Grid.Column="0"
+                                                 Width="10" Height="10"
+                                                 Fill="#F38BA8"
+                                                 IsVisible="{Binding HasBreakpoint}"
+                                                 VerticalAlignment="Center"
+                                                 HorizontalAlignment="Center" />
+
+                                        <!-- Current step indicator (yellow arrow) -->
+                                        <TextBlock Grid.Column="1"
+                                                   Text="&#9654;"
+                                                   Foreground="#F9E2AF"
+                                                   FontSize="10"
+                                                   IsVisible="{Binding IsCurrent}"
+                                                   VerticalAlignment="Center"
+                                                   HorizontalAlignment="Center" />
+
+                                        <!-- Step name -->
+                                        <StackPanel Grid.Column="2" Spacing="1" VerticalAlignment="Center">
+                                            <TextBlock Text="{Binding StepName}"
+                                                       Foreground="{Binding Status, Converter={StaticResource StatusBrush}}"
+                                                       FontWeight="SemiBold"
+                                                       FontSize="12" />
+                                            <TextBlock Text="{Binding StageName}"
+                                                       Foreground="#585B70"
+                                                       FontSize="10" />
+                                        </StackPanel>
+
+                                        <!-- Duration -->
+                                        <TextBlock Grid.Column="3"
+                                                   Text="{Binding Duration}"
+                                                   Foreground="#6C7086"
+                                                   FontSize="11"
+                                                   VerticalAlignment="Center"
+                                                   Margin="8,0" />
+
+                                        <!-- Exit code -->
+                                        <TextBlock Grid.Column="4"
+                                                   Text="{Binding ExitCode}"
+                                                   Foreground="#6C7086"
+                                                   FontSize="11"
+                                                   VerticalAlignment="Center"
+                                                   Margin="0,0,4,0" />
+                                    </Grid>
+                                </DataTemplate>
+                            </ListBox.ItemTemplate>
+                        </ListBox>
+                    </DockPanel>
+                </Border>
+
+                <!-- Output Log -->
+                <Border Grid.Column="1" Background="#11111B" Padding="4">
+                    <DockPanel>
+                        <TextBlock DockPanel.Dock="Top"
+                                   Text="Output"
+                                   FontWeight="Bold"
+                                   Foreground="#CDD6F4"
+                                   Margin="4,4,4,8" />
+
+                        <ListBox ItemsSource="{Binding OutputLines}"
+                                 Background="Transparent"
+                                 BorderThickness="0"
+                                 Name="OutputListBox">
+                            <ListBox.ItemTemplate>
+                                <DataTemplate x:DataType="vm:OutputLineItem">
+                                    <TextBlock Text="{Binding Text}"
+                                               FontFamily="Cascadia Code,Consolas,Courier New"
+                                               FontSize="12"
+                                               Foreground="{Binding IsError, Converter={StaticResource BoolToColor}, ConverterParameter=#F38BA8|#BAC2DE}"
+                                               TextWrapping="NoWrap" />
+                                </DataTemplate>
+                            </ListBox.ItemTemplate>
+                        </ListBox>
+                    </DockPanel>
+                </Border>
+            </Grid>
+
+            <!-- Bottom: YAML Source Panel (collapsible) -->
+            <Border Grid.Row="1"
+                    IsVisible="{Binding ShowSource}"
+                    Background="#11111B"
+                    Height="250"
+                    Padding="4">
                 <DockPanel>
                     <TextBlock DockPanel.Dock="Top"
-                               Text="Steps"
                                FontWeight="Bold"
                                Foreground="#CDD6F4"
-                               Margin="4,4,4,8" />
-
-                    <ListBox ItemsSource="{Binding StepProgress}"
-                             Background="Transparent"
-                             BorderThickness="0"
-                             Name="StepListBox"
-                             DoubleTapped="StepListBox_DoubleTapped">
-                        <ListBox.ItemTemplate>
-                            <DataTemplate x:DataType="vm:StepProgressItem">
-                                <Grid ColumnDefinitions="20,20,*,Auto,Auto" Margin="0,2">
-                                    <!-- Breakpoint indicator (red dot when set) -->
-                                    <Ellipse Grid.Column="0"
-                                             Width="10" Height="10"
-                                             Fill="#F38BA8"
-                                             IsVisible="{Binding HasBreakpoint}"
-                                             VerticalAlignment="Center"
-                                             HorizontalAlignment="Center" />
-
-                                    <!-- Current step indicator (yellow arrow) -->
-                                    <TextBlock Grid.Column="1"
-                                               Text="&#9654;"
-                                               Foreground="#F9E2AF"
-                                               FontSize="10"
-                                               IsVisible="{Binding IsCurrent}"
-                                               VerticalAlignment="Center"
-                                               HorizontalAlignment="Center" />
-
-                                    <!-- Step name -->
-                                    <StackPanel Grid.Column="2" Spacing="1" VerticalAlignment="Center">
-                                        <TextBlock Text="{Binding StepName}"
-                                                   Foreground="{Binding Status, Converter={StaticResource StatusBrush}}"
-                                                   FontWeight="SemiBold"
-                                                   FontSize="12" />
-                                        <TextBlock Text="{Binding StageName}"
-                                                   Foreground="#585B70"
-                                                   FontSize="10" />
-                                    </StackPanel>
-
-                                    <!-- Duration -->
-                                    <TextBlock Grid.Column="3"
-                                               Text="{Binding Duration}"
-                                               Foreground="#6C7086"
-                                               FontSize="11"
-                                               VerticalAlignment="Center"
-                                               Margin="8,0" />
-
-                                    <!-- Exit code -->
-                                    <TextBlock Grid.Column="4"
-                                               Text="{Binding ExitCode}"
-                                               Foreground="#6C7086"
-                                               FontSize="11"
-                                               VerticalAlignment="Center"
-                                               Margin="0,0,4,0" />
-                                </Grid>
-                            </DataTemplate>
-                        </ListBox.ItemTemplate>
-                    </ListBox>
-                </DockPanel>
-            </Border>
-
-            <!-- Output Log -->
-            <Border Grid.Column="1" Background="#11111B" Padding="4">
-                <DockPanel>
-                    <TextBlock DockPanel.Dock="Top"
-                               Text="Output"
-                               FontWeight="Bold"
-                               Foreground="#CDD6F4"
-                               Margin="4,4,4,8" />
-
-                    <ListBox ItemsSource="{Binding OutputLines}"
-                             Background="Transparent"
-                             BorderThickness="0"
-                             Name="OutputListBox">
-                        <ListBox.ItemTemplate>
-                            <DataTemplate x:DataType="vm:OutputLineItem">
-                                <TextBlock Text="{Binding Text}"
-                                           FontFamily="Cascadia Code,Consolas,Courier New"
-                                           FontSize="12"
-                                           Foreground="{Binding IsError, Converter={StaticResource BoolToColor}, ConverterParameter=#F38BA8|#BAC2DE}"
-                                           TextWrapping="NoWrap" />
-                            </DataTemplate>
-                        </ListBox.ItemTemplate>
-                    </ListBox>
+                               Margin="4,4,4,8">
+                        <Run Text="Source" />
+                        <Run Text="{Binding LoadedFilePath}" Foreground="#585B70" FontSize="11" FontWeight="Normal" />
+                    </TextBlock>
+                    <ae:TextEditor Name="SourceEditor"
+                                   FontFamily="Cascadia Code,Consolas,Courier New"
+                                   FontSize="12"
+                                   ShowLineNumbers="True"
+                                   IsReadOnly="True" />
                 </DockPanel>
             </Border>
         </Grid>

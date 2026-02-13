@@ -6,15 +6,25 @@
 
 Every CI/CD tool (GitLab, GitHub Actions, Azure DevOps) is fire-and-forget. You define a pipeline, push it, wait, read logs. If something breaks, you add `echo` statements and push again. Repeat until it works.
 
-PipeForge runs pipelines *locally* as a debuggable C# program. Every step is an inspectable object. Set a breakpoint, see the full state, step through.
+PipeForge runs pipelines *locally* as a debuggable program. Every step is an inspectable object. Set a breakpoint, see the full state, step through — like the VS debugger, but for your CI/CD.
 
 ## Quick Start
+
+### GUI (Recommended)
+
+```bash
+dotnet run --project PipeForge.GUI
+```
+
+- **Templates** — Browse pre-built pipeline templates, preview YAML, create from template
+- **Editor** — New / Open / Save / Save As pipeline YAML with syntax highlighting and live validation
+- **Run** — Load a pipeline, see step progress, toggle breakpoints, step through execution
+
+### CLI
 
 ```bash
 # Create a pipeline from a template
 pipeforge init innosetup -o my-pipeline.yml
-
-# Edit the generated YAML (swap paths, adjust steps)
 
 # Run with step-debugging
 pipeforge run my-pipeline.yml --interactive
@@ -27,6 +37,18 @@ pipeforge run my-pipeline.yml -i -w
 ```
 
 ## The Step Debugger
+
+### GUI Mode
+
+The Run view provides a VS debugger-like experience:
+
+- **Step Progress Panel** — See all steps, their status (pending/running/success/failed), duration, exit code
+- **Breakpoints** — Double-click any step to toggle a breakpoint (red dot). YAML `breakpoint: always` is also honored.
+- **Debug Controls** — Continue (F5), Step Next (F10), Skip, Retry, Abort — always visible in the toolbar
+- **Source Panel** — Toggle the Source button to see the pipeline YAML with the current step highlighted
+- **Output Log** — Real-time stdout/stderr from running processes
+- **Restart** — Re-run the loaded pipeline without opening the file picker again
+- **Recent Files** — Sidebar shows recently opened pipelines for quick access
 
 ### Console Mode (--interactive)
 
@@ -45,8 +67,6 @@ Now F10 through your pipeline. Hover over `run` to see:
 - Every step result so far (stdout, stderr, exit codes, timing)
 - Artifacts produced
 - The exact command about to execute
-
-This is what no other tool gives you.
 
 ## Templates (Building Blocks)
 
@@ -123,8 +143,12 @@ PipeForge.sln
 │   ├── Engine/              # Executor, process wrapper, YAML loader
 │   ├── Watcher/             # FileSystemWatcher integration
 │   └── Templates/           # Pre-built pipeline building blocks
+├── PipeForge.GUI/           # Avalonia desktop app (debug UI)
+│   ├── Views/               # Templates, Editor, Run views
+│   ├── ViewModels/          # MVVM with CommunityToolkit.Mvvm
+│   └── Converters/          # Value converters for UI bindings
 ├── PipeForge.Runner/        # CLI tool (pipeforge.exe)
-└── PipeForge.Tests/         # xUnit tests
+└── PipeForge.Tests/         # xUnit tests (62 tests)
 ```
 
 The Core library is independent — embed it in your own tools, wrap it in a UI, use it from tests.
@@ -154,7 +178,7 @@ engine.OnBeforeStep += (sender, args) =>
 {
     // Log, approve, notify, inspect — whatever you need
     Console.WriteLine($"About to run: {args.Step.Name}");
-    
+
     // Control execution:
     args.Action = DebugAction.Continue;  // or Skip, Retry, Abort
 };
@@ -172,7 +196,7 @@ engine.OnOutput += (sender, line) =>
 
 ## Requirements
 
-- .NET 8.0 SDK
+- .NET 10.0 SDK
 - Windows (primary target) / Linux / macOS
 
 ## License

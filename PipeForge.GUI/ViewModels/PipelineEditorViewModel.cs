@@ -3,6 +3,7 @@ using System.Timers;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using PipeForge.Core.Engine;
+using PipeForge.Core.Templates;
 
 namespace PipeForge.GUI.ViewModels;
 
@@ -10,6 +11,8 @@ public partial class PipelineEditorViewModel : ObservableObject, IDisposable
 {
     private readonly System.Timers.Timer _debounceTimer;
     private string? _currentFilePath;
+
+    public Action<string>? OnFileOpened { get; set; }
 
     [ObservableProperty]
     private string _yamlContent = string.Empty;
@@ -54,6 +57,14 @@ public partial class PipelineEditorViewModel : ObservableObject, IDisposable
     }
 
     [RelayCommand]
+    private void NewFile()
+    {
+        _currentFilePath = null;
+        YamlContent = CommentedYamlTemplates.GetTemplate("custom");
+        StatusText = "New pipeline (unsaved)";
+    }
+
+    [RelayCommand]
     private async Task OpenFileAsync()
     {
         var topLevel = Avalonia.Application.Current?.ApplicationLifetime is
@@ -84,6 +95,7 @@ public partial class PipelineEditorViewModel : ObservableObject, IDisposable
                 _currentFilePath = path;
                 YamlContent = await File.ReadAllTextAsync(path);
                 StatusText = $"Loaded: {path}";
+                OnFileOpened?.Invoke(path);
             }
             catch (Exception ex)
             {
@@ -121,6 +133,40 @@ public partial class PipelineEditorViewModel : ObservableObject, IDisposable
                 Title = "Save Pipeline YAML",
                 DefaultExtension = "yml",
                 SuggestedFileName = "pipeforge.yml"
+            });
+
+        if (file != null)
+        {
+            _currentFilePath = file.Path.LocalPath;
+            try
+            {
+                await File.WriteAllTextAsync(_currentFilePath, YamlContent);
+                StatusText = $"Saved: {_currentFilePath}";
+            }
+            catch (Exception ex)
+            {
+                StatusText = $"Failed to save: {ex.Message}";
+            }
+        }
+    }
+
+    [RelayCommand]
+    private async Task SaveFileAsAsync()
+    {
+        var topLevel = Avalonia.Application.Current?.ApplicationLifetime is
+            Avalonia.Controls.ApplicationLifetimes.IClassicDesktopStyleApplicationLifetime desktop
+            ? desktop.MainWindow : null;
+
+        if (topLevel == null) return;
+
+        var file = await topLevel.StorageProvider.SaveFilePickerAsync(
+            new Avalonia.Platform.Storage.FilePickerSaveOptions
+            {
+                Title = "Save Pipeline YAML As",
+                DefaultExtension = "yml",
+                SuggestedFileName = _currentFilePath != null
+                    ? Path.GetFileName(_currentFilePath)
+                    : "pipeforge.yml"
             });
 
         if (file != null)

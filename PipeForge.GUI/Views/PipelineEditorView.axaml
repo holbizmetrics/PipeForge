@@ -9,8 +9,11 @@
         <!-- Toolbar -->
         <Border DockPanel.Dock="Top" Padding="8" Background="#181825">
             <StackPanel Orientation="Horizontal" Spacing="8">
+                <Button Content="New" Command="{Binding NewFileCommand}" />
                 <Button Content="Open" Command="{Binding OpenFileCommand}" />
                 <Button Content="Save" Command="{Binding SaveFileCommand}" />
+                <Button Content="Save As" Command="{Binding SaveFileAsCommand}" />
+                <Separator />
                 <Button Content="Validate" Command="{Binding ValidateCommand}" />
                 <Separator />
                 <TextBlock Text="{Binding StatusText}"

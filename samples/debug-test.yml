@@ -1,0 +1,57 @@
+# ═══════════════════════════════════════════════════════════════════════
+# PipeForge — Debug UX Test Pipeline
+# ═══════════════════════════════════════════════════════════════════════
+#
+# Multi-step pipeline for testing breakpoints, stepping, and debug controls.
+# Has 3 stages, 7 steps, with breakpoints at key points.
+#
+# Run in PipeForge GUI → Run tab → "Run Pipeline..." → select this file.
+#
+# ═══════════════════════════════════════════════════════════════════════
+
+version: 1
+
+name: Debug UX Test
+description: Multi-step pipeline to test breakpoints, step-through, and debug controls
+
+variables:
+  BUILD_CONFIG: Release
+  APP_NAME: MyApp
+
+stages:
+
+  - name: setup
+    steps:
+      - name: Check environment
+        command: echo
+        arguments: "Environment: Windows, Config: ${BUILD_CONFIG}"
+
+      - name: Create output dir
+        command: cmd
+        arguments: /c mkdir output 2>nul & echo Output directory ready
+
+  - name: build
+    steps:
+      - name: Compile step 1
+        command: echo
+        arguments: "Compiling ${APP_NAME} module A..."
+        breakpoint: Always
+
+      - name: Compile step 2
+        command: echo
+        arguments: "Compiling ${APP_NAME} module B..."
+
+      - name: Link binaries
+        command: echo
+        arguments: "Linking ${APP_NAME}.exe (${BUILD_CONFIG})..."
+
+  - name: test
+    steps:
+      - name: Run unit tests
+        command: echo
+        arguments: "Running 42 unit tests... all passed."
+        breakpoint: Always
+
+      - name: Generate report
+        command: echo
+        arguments: "Test report written to output/report.html"

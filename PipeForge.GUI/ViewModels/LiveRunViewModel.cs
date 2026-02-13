@@ -15,6 +15,8 @@ public partial class LiveRunViewModel : ObservableObject
     private ILoggerFactory? _loggerFactory;
     private bool _stepNextRequested;
 
+    public Action<string>? OnFileOpened { get; set; }
+
     [ObservableProperty]
     private ObservableCollection<OutputLineItem> _outputLines = new();
 
@@ -22,6 +24,7 @@ public partial class LiveRunViewModel : ObservableObject
     private ObservableCollection<StepProgressItem> _stepProgress = new();
 
     [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(RestartCommand))]
     private bool _isRunning;
 
     [ObservableProperty]
@@ -49,7 +52,17 @@ public partial class LiveRunViewModel : ObservableObject
     private string? _breakpointInfo;
 
     [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(RestartCommand))]
     private string? _loadedFilePath;
+
+    [ObservableProperty]
+    private string _yamlSource = "";
+
+    [ObservableProperty]
+    private int _yamlHighlightLine;
+
+    [ObservableProperty]
+    private bool _showSource;
 
     [RelayCommand]
     private async Task RunPipelineAsync()
@@ -78,16 +91,19 @@ public partial class LiveRunViewModel : ObservableObject
 
         var path = files[0].Path.LocalPath;
         LoadedFilePath = path;
+        OnFileOpened?.Invoke(path);
 
         await RunFromPathAsync(path);
     }
 
-    [RelayCommand]
+    [RelayCommand(CanExecute = nameof(CanRestart))]
     private async Task RestartAsync()
     {
         if (LoadedFilePath != null)
             await RunFromPathAsync(LoadedFilePath);
     }
+
+    private bool CanRestart() => LoadedFilePath != null && !IsRunning;
 
     [RelayCommand]
     private void ToggleBreakpoint(StepProgressItem item)
@@ -110,6 +126,7 @@ public partial class LiveRunViewModel : ObservableObject
         {
             pipeline = PipelineLoader.LoadFromFile(path);
             PipelineName = pipeline.Name;
+            YamlSource = File.ReadAllText(path);
         }
         catch (Exception ex)
         {
@@ -201,6 +218,9 @@ public partial class LiveRunViewModel : ObservableObject
                 }
 
                 StepProgressText = $"{e.StepIndex}/{e.TotalSteps}";
+
+                // Highlight current step in YAML source
+                YamlHighlightLine = FindStepLine(e.Step.Name);
 
                 if (shouldPause)
                 {
@@ -324,9 +344,26 @@ public partial class LiveRunViewModel : ObservableObject
         StatusText = "Cancelling...";
     }
 
+    [RelayCommand]
+    private void ToggleSource() => ShowSource = !ShowSource;
+
     private void ResolveBreakpoint(DebugAction action)
     {
         _breakpointTcs?.TrySetResult(action);
+    }
+
+    private int FindStepLine(string stepName)
+    {
+        if (string.IsNullOrEmpty(YamlSource)) return 0;
+        var lines = YamlSource.Split('\n');
+        for (int i = 0; i < lines.Length; i++)
+        {
+            var trimmed = lines[i].TrimStart();
+            if (trimmed.StartsWith("- name:") &&
+                trimmed.Contains(stepName, StringComparison.OrdinalIgnoreCase))
+                return i + 1; // 1-based
+        }
+        return 0;
     }
 }
 
